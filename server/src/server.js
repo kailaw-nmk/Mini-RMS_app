@@ -39,6 +39,15 @@ function extractAuth(req) {
 async function handleRequest(req, res) {
   const { method, url } = req;
 
+  // CORS headers for all requests
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+  if (method === 'OPTIONS') {
+    res.writeHead(204);
+    return res.end();
+  }
+
   // Health check
   if (method === 'GET' && url === '/api/health') {
     const redisOk = await isRedisHealthy();
@@ -85,15 +94,6 @@ async function handleRequest(req, res) {
   }
 
   // === Dashboard API (operator only) ===
-
-  // CORS headers for web dashboard
-  res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
-  if (method === 'OPTIONS') {
-    res.writeHead(204);
-    return res.end();
-  }
 
   // Get active sessions
   if (method === 'GET' && url === '/api/sessions') {
