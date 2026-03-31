@@ -1,0 +1,225 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>TailCall - 管制ダッシュボード</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    :root {
+      --bg: #1a1a2e; --surface: #16213e; --surface2: #0f3460;
+      --text: #e8e8e8; --text2: #a0a0b0; --accent: #4CAF50;
+      --red: #f44336; --yellow: #FFD600; --orange: #FF9800; --blue: #2196F3;
+    }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: var(--bg); color: var(--text); min-height: 100vh; }
+    header { background: var(--surface); padding: 16px 24px; display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid #2a2a4e; }
+    header h1 { font-size: 20px; font-weight: 600; }
+    .status-dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; margin-right: 8px; }
+    .status-dot.online { background: var(--accent); }
+    .status-dot.offline { background: var(--red); }
+    .header-status { font-size: 13px; color: var(--text2); display: flex; align-items: center; }
+    main { padding: 24px; max-width: 1200px; margin: 0 auto; }
+    .stats-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px; margin-bottom: 24px; }
+    .stat-card { background: var(--surface); padding: 20px; border-radius: 12px; }
+    .stat-card .label { font-size: 13px; color: var(--text2); margin-bottom: 4px; }
+    .stat-card .value { font-size: 28px; font-weight: 700; }
+    .section { margin-bottom: 24px; }
+    .section h2 { font-size: 16px; font-weight: 600; margin-bottom: 12px; color: var(--text2); }
+    .driver-list { display: flex; flex-direction: column; gap: 8px; }
+    .driver-card { background: var(--surface); padding: 16px 20px; border-radius: 10px; display: flex; align-items: center; justify-content: space-between; cursor: pointer; transition: background 0.2s; }
+    .driver-card:hover { background: var(--surface2); }
+    .driver-info { display: flex; align-items: center; gap: 12px; }
+    .driver-icon { width: 40px; height: 40px; border-radius: 50%; background: var(--surface2); display: flex; align-items: center; justify-content: center; font-size: 18px; }
+    .driver-name { font-weight: 600; font-size: 15px; }
+    .driver-ip { font-size: 12px; color: var(--text2); }
+    .driver-status { display: flex; align-items: center; gap: 8px; }
+    .state-badge { padding: 4px 10px; border-radius: 12px; font-size: 12px; font-weight: 600; }
+    .state-CONNECTED { background: rgba(76,175,80,0.2); color: var(--accent); }
+    .state-RECONNECTING_NETWORK, .state-RECONNECTING_PEER { background: rgba(255,214,0,0.2); color: var(--yellow); }
+    .state-SUSPENDED { background: rgba(255,152,0,0.2); color: var(--orange); }
+    .state-DISCONNECTED { background: rgba(150,150,150,0.15); color: var(--text2); }
+    .quality-bar { width: 60px; height: 6px; border-radius: 3px; background: #333; overflow: hidden; }
+    .quality-fill { height: 100%; border-radius: 3px; transition: width 0.3s; }
+    .btn { padding: 8px 16px; border: none; border-radius: 8px; font-size: 13px; font-weight: 600; cursor: pointer; transition: opacity 0.2s; }
+    .btn:hover { opacity: 0.85; }
+    .btn-call { background: var(--accent); color: white; }
+    .btn-end { background: var(--red); color: white; }
+    .log-table { width: 100%; border-collapse: collapse; }
+    .log-table th, .log-table td { padding: 10px 12px; text-align: left; border-bottom: 1px solid #2a2a4e; font-size: 13px; }
+    .log-table th { color: var(--text2); font-weight: 500; }
+    .event-badge { padding: 2px 8px; border-radius: 8px; font-size: 11px; }
+    .event-call_start { background: rgba(76,175,80,0.2); color: var(--accent); }
+    .event-call_end { background: rgba(150,150,150,0.15); color: var(--text2); }
+    .event-disconnect { background: rgba(244,67,54,0.2); color: var(--red); }
+    .event-reconnect { background: rgba(33,150,243,0.2); color: var(--blue); }
+    .config-bar { background: var(--surface); padding: 12px 16px; border-radius: 8px; margin-bottom: 16px; display: flex; gap: 8px; align-items: center; }
+    .config-bar input { background: var(--bg); border: 1px solid #333; color: var(--text); padding: 6px 10px; border-radius: 6px; font-size: 13px; }
+    .config-bar input:focus { outline: none; border-color: var(--accent); }
+    #connection-error { color: var(--red); font-size: 13px; margin-left: 12px; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>TailCall 管制ダッシュボード</h1>
+    <div class="header-status">
+      <span class="status-dot" id="server-dot"></span>
+      <span id="server-status">接続中...</span>
+    </div>
+  </header>
+
+  <main>
+    <div class="config-bar">
+      <label style="font-size:13px;color:var(--text2)">サーバー:</label>
+      <input id="server-url" type="text" value="http://localhost:8080" style="width:240px">
+      <input id="auth-token" type="text" placeholder="JWTトークン" style="width:320px">
+      <button class="btn btn-call" onclick="connectToServer()">接続</button>
+      <span id="connection-error"></span>
+    </div>
+
+    <div class="stats-grid">
+      <div class="stat-card">
+        <div class="label">アクティブ通話</div>
+        <div class="value" id="stat-active">-</div>
+      </div>
+      <div class="stat-card">
+        <div class="label">接続デバイス</div>
+        <div class="value" id="stat-devices">-</div>
+      </div>
+      <div class="stat-card">
+        <div class="label">累計通話数</div>
+        <div class="value" id="stat-total">-</div>
+      </div>
+      <div class="stat-card">
+        <div class="label">平均復帰時間</div>
+        <div class="value" id="stat-avg-reconnect">-</div>
+      </div>
+    </div>
+
+    <div class="section">
+      <h2>ドライバー一覧</h2>
+      <div class="driver-list" id="driver-list">
+        <div style="color:var(--text2);font-size:14px;padding:20px;text-align:center">サーバーに接続してください</div>
+      </div>
+    </div>
+
+    <div class="section">
+      <h2>通話ログ</h2>
+      <table class="log-table">
+        <thead>
+          <tr><th>時刻</th><th>イベント</th><th>セッション</th><th>詳細</th></tr>
+        </thead>
+        <tbody id="log-body">
+          <tr><td colspan="4" style="color:var(--text2);text-align:center">ログなし</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </main>
+
+  <script>
+    let serverUrl = '';
+    let authToken = '';
+    let refreshInterval = null;
+
+    async function api(path) {
+      const res = await fetch(`${serverUrl}${path}`, {
+        headers: { 'Authorization': `Bearer ${authToken}` }
+      });
+      if (!res.ok) throw new Error(`API error: ${res.status}`);
+      return res.json();
+    }
+
+    async function connectToServer() {
+      serverUrl = document.getElementById('server-url').value.replace(/\/$/, '');
+      authToken = document.getElementById('auth-token').value;
+      document.getElementById('connection-error').textContent = '';
+
+      try {
+        const health = await fetch(`${serverUrl}/api/health`).then(r => r.json());
+        document.getElementById('server-dot').className = 'status-dot online';
+        document.getElementById('server-status').textContent = `接続済み (uptime: ${Math.round(health.uptime)}s)`;
+        refresh();
+        if (refreshInterval) clearInterval(refreshInterval);
+        refreshInterval = setInterval(refresh, 5000);
+      } catch (e) {
+        document.getElementById('server-dot').className = 'status-dot offline';
+        document.getElementById('server-status').textContent = '接続失敗';
+        document.getElementById('connection-error').textContent = e.message;
+      }
+    }
+
+    async function refresh() {
+      try {
+        const [sessData, stats] = await Promise.all([api('/api/sessions'), api('/api/stats')]);
+        renderStats(sessData, stats);
+        renderDrivers(sessData);
+        const logData = await api('/api/logs?limit=20');
+        renderLogs(logData.logs);
+      } catch (e) {
+        console.error('Refresh error:', e);
+      }
+    }
+
+    function renderStats(sessData, stats) {
+      const active = sessData.sessions.filter(s => s.state === 'CONNECTED').length;
+      document.getElementById('stat-active').textContent = active;
+      document.getElementById('stat-devices').textContent = sessData.connected_devices.length;
+      document.getElementById('stat-total').textContent = stats.total_calls;
+      document.getElementById('stat-avg-reconnect').textContent =
+        stats.avg_reconnect_ms > 0 ? `${(stats.avg_reconnect_ms / 1000).toFixed(1)}s` : '-';
+    }
+
+    function renderDrivers(sessData) {
+      const list = document.getElementById('driver-list');
+      if (sessData.sessions.length === 0) {
+        list.innerHTML = '<div style="color:var(--text2);font-size:14px;padding:20px;text-align:center">アクティブなセッションはありません</div>';
+        return;
+      }
+      list.innerHTML = sessData.sessions.map(s => {
+        const quality = s.last_metrics?.quality_level || 'UNKNOWN';
+        const qNorm = { EXCELLENT: 1, GOOD: 0.75, FAIR: 0.5, POOR: 0.25, CRITICAL: 0 }[quality] ?? 0.5;
+        const qColor = { EXCELLENT: '#4CAF50', GOOD: '#2196F3', FAIR: '#FFD600', POOR: '#FF9800', CRITICAL: '#f44336' }[quality] ?? '#666';
+        return `
+          <div class="driver-card">
+            <div class="driver-info">
+              <div class="driver-icon">🚛</div>
+              <div>
+                <div class="driver-name">${s.driver_device_id || s.driver_ip}</div>
+                <div class="driver-ip">${s.driver_ip} | ${s.mode} | 切断${s.disconnect_count}回</div>
+              </div>
+            </div>
+            <div class="driver-status">
+              <div class="quality-bar"><div class="quality-fill" style="width:${qNorm*100}%;background:${qColor}"></div></div>
+              <span class="state-badge state-${s.state}">${stateLabel(s.state)}</span>
+            </div>
+          </div>`;
+      }).join('');
+    }
+
+    function stateLabel(state) {
+      return { CONNECTED: '接続中', RECONNECTING_NETWORK: '再接続中', RECONNECTING_PEER: '相手待ち', SUSPENDED: '待機中', DISCONNECTED: '切断' }[state] || state;
+    }
+
+    function renderLogs(logs) {
+      const body = document.getElementById('log-body');
+      if (!logs || logs.length === 0) {
+        body.innerHTML = '<tr><td colspan="4" style="color:var(--text2);text-align:center">ログなし</td></tr>';
+        return;
+      }
+      body.innerHTML = logs.map(l => {
+        const time = new Date(l.timestamp).toLocaleString('ja-JP', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+        const detail = l.reason || l.method || l.driver_ip || '';
+        return `<tr>
+          <td>${time}</td>
+          <td><span class="event-badge event-${l.event}">${eventLabel(l.event)}</span></td>
+          <td style="font-family:monospace;font-size:12px">${(l.session_id || '').slice(-12)}</td>
+          <td style="color:var(--text2)">${detail}</td>
+        </tr>`;
+      }).join('');
+    }
+
+    function eventLabel(event) {
+      return { call_start: '通話開始', call_end: '通話終了', disconnect: '切断', reconnect: '復帰' }[event] || event;
+    }
+  </script>
+</body>
+</html>

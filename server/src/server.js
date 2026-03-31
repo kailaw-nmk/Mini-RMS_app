@@ -3,7 +3,9 @@ import { WebSocketServer } from 'ws';
 import { verifyToken } from './auth/jwt.js';
 import { createPairingCode, confirmPairing } from './auth/pairing.js';
 import { isRedisHealthy } from './session/redis.js';
+import { getActiveSessions, getCallLogs, getCallStats } from './session/call_log.js';
 import { handleConnection } from './ws/handler.js';
+import { getConnectedDevices } from './ws/relay.js';
 import logger from './logging/logger.js';
 
 const PORT = parseInt(process.env.PORT || '8080', 10);
@@ -80,6 +82,51 @@ async function handleRequest(req, res) {
     } catch (err) {
       return sendJson(res, 400, { error: 'INVALID_MESSAGE', message: err.message });
     }
+  }
+
+  // === Dashboard API (operator only) ===
+
+  // CORS headers for web dashboard
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+  if (method === 'OPTIONS') {
+    res.writeHead(204);
+    return res.end();
+  }
+
+  // Get active sessions
+  if (method === 'GET' && url === '/api/sessions') {
+    const auth = extractAuth(req);
+    if (!auth || !auth.valid) {
+      return sendJson(res, 401, { error: 'AUTH_FAILED' });
+    }
+    const sessions = await getActiveSessions();
+    const connected = getConnectedDevices();
+    return sendJson(res, 200, { sessions, connected_devices: connected });
+  }
+
+  // Get call logs
+  if (method === 'GET' && (url === '/api/logs' || url?.startsWith('/api/logs?'))) {
+    const auth = extractAuth(req);
+    if (!auth || !auth.valid) {
+      return sendJson(res, 401, { error: 'AUTH_FAILED' });
+    }
+    const params = new URL(url, 'http://localhost').searchParams;
+    const limit = parseInt(params.get('limit') || '50', 10);
+    const offset = parseInt(params.get('offset') || '0', 10);
+    const logs = await getCallLogs(limit, offset);
+    return sendJson(res, 200, { logs, limit, offset });
+  }
+
+  // Get call statistics
+  if (method === 'GET' && url === '/api/stats') {
+    const auth = extractAuth(req);
+    if (!auth || !auth.valid) {
+      return sendJson(res, 401, { error: 'AUTH_FAILED' });
+    }
+    const stats = await getCallStats();
+    return sendJson(res, 200, stats);
   }
 
   sendJson(res, 404, { error: 'NOT_FOUND', message: 'Endpoint not found' });

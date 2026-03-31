@@ -1,6 +1,7 @@
 import { v4 as uuidv4 } from 'uuid';
 import { verifyToken, shouldRefresh, refreshToken } from '../auth/jwt.js';
 import { createSession, getSession, updateSession, refreshSessionTTL } from '../session/redis.js';
+import { logCallEvent } from '../session/call_log.js';
 import { registerConnection, unregisterConnection, relayMessage } from './relay.js';
 import logger from '../logging/logger.js';
 
@@ -86,6 +87,7 @@ async function handleCallInitiate(ws, msg) {
   }
 
   sendMessage(ws, { type: 'call_initiated', session_id: sessionId });
+  logCallEvent({ event: 'call_start', session_id: sessionId, operator: auth.device_id, driver_ip: msg.to });
 }
 
 function relayToByIp(targetIp, message) {
@@ -135,13 +137,18 @@ async function handleRelayMessage(ws, msg) {
     sendError(ws, 'PEER_NOT_CONNECTED', 'Target peer is not online');
   }
 
-  // Update session if it's a state_change
+  // Update session and log on state_change
   if (msg.type === 'state_change') {
     await updateSession(msg.session_id, {
       state: msg.to_state,
       last_reconnect_method: msg.reconnect_method,
       last_metrics: msg.metrics,
     });
+    if (msg.to_state === 'RECONNECTING_NETWORK' || msg.to_state === 'RECONNECTING_PEER') {
+      logCallEvent({ event: 'disconnect', session_id: msg.session_id, from_state: msg.from_state, to_state: msg.to_state });
+    } else if (msg.from_state?.startsWith('RECONNECTING') && msg.to_state === 'CONNECTED') {
+      logCallEvent({ event: 'reconnect', session_id: msg.session_id, method: msg.reconnect_method, reconnect_duration_ms: msg.reconnect_duration_ms });
+    }
   }
 
   // Refresh TTL on any activity
@@ -169,6 +176,7 @@ async function handleCallEnd(ws, msg) {
 
   // Update session state
   await updateSession(msg.session_id, { state: 'DISCONNECTED' });
+  logCallEvent({ event: 'call_end', session_id: msg.session_id, reason: msg.reason });
   logger.info({ session_id: msg.session_id, reason: msg.reason }, 'Call ended');
 }
 
