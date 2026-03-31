@@ -1,8 +1,10 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../features/call/providers/call_provider.dart';
 import '../features/call/models/call_state.dart' as app;
 import '../features/call/widgets/call_status_bar.dart';
+import '../services/foreground_service.dart';
 
 class CallScreen extends ConsumerStatefulWidget {
   const CallScreen({super.key});
@@ -18,6 +20,47 @@ class _CallScreenState extends ConsumerState<CallScreen> {
   final _deviceIdController = TextEditingController();
   final _tokenController = TextEditingController();
   bool _isOperator = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _checkBatteryOptimization();
+  }
+
+  Future<void> _checkBatteryOptimization() async {
+    if (!Platform.isAndroid) return;
+    final excluded = await ForegroundServiceManager.isBatteryOptimizationExcluded();
+    if (!excluded && mounted) {
+      _showBatteryOptimizationDialog();
+    }
+  }
+
+  void _showBatteryOptimizationDialog() {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('バッテリー最適化の除外'),
+        content: const Text(
+          'TailCallが通話をバックグラウンドで維持するには、'
+          'バッテリー最適化の除外設定が必要です。\n\n'
+          '設定しない場合、画面OFF時に通話が切断される可能性があります。',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('後で'),
+          ),
+          FilledButton(
+            onPressed: () {
+              Navigator.pop(ctx);
+              ForegroundServiceManager.requestBatteryOptimizationExclusion();
+            },
+            child: const Text('設定する'),
+          ),
+        ],
+      ),
+    );
+  }
 
   @override
   void dispose() {

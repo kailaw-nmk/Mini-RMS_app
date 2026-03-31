@@ -1,9 +1,12 @@
 import 'dart:async';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_webrtc/flutter_webrtc.dart';
 import '../models/call_state.dart' as app;
 import '../services/signaling_client.dart';
 import '../services/webrtc_service.dart';
+import '../../../services/foreground_service.dart';
+import '../../../core/constants.dart';
 
 /// State for the active call
 class CallState {
@@ -113,6 +116,7 @@ class CallNotifier extends Notifier<CallState> {
     state = state.copyWith(
       session: state.session!.copyWith(connectionState: newState),
     );
+    _updateForegroundNotification(newState);
   }
 
   void _startDurationTimer() {
@@ -121,14 +125,36 @@ class CallNotifier extends Notifier<CallState> {
     _durationTimer = Timer.periodic(const Duration(seconds: 1), (_) {
       if (state.session != null) {
         state = state.copyWith();
+        _updateForegroundNotification(state.session!.connectionState);
       }
     });
+  }
+
+  String _formatDuration(Duration d) {
+    final h = d.inHours.toString().padLeft(2, '0');
+    final m = (d.inMinutes % 60).toString().padLeft(2, '0');
+    final s = (d.inSeconds % 60).toString().padLeft(2, '0');
+    return '$h:$m:$s';
+  }
+
+  void _updateForegroundNotification(app.ConnectionState connState) {
+    if (!defaultTargetPlatform.toString().contains('android')) return;
+    final stateKey = state.session?.stateKey ?? 'DISCONNECTED';
+    final displayName = kStateDisplayNames[stateKey] ?? stateKey;
+    final duration = _formatDuration(callDuration);
+    ForegroundServiceManager.updateNotification(
+      statusText: displayName,
+      duration: duration,
+    );
   }
 
   /// Start a call (operator role)
   Future<void> startCall(String fromIp, String toIp) async {
     state = state.copyWith(isConnecting: true, clearError: true);
     try {
+      // Start Foreground Service before call
+      await ForegroundServiceManager.startService();
+
       await _webrtc!.startCall(fromIp, toIp);
       _callStartTime = DateTime.now();
       state = state.copyWith(
@@ -142,6 +168,7 @@ class CallNotifier extends Notifier<CallState> {
       );
       _startDurationTimer();
     } catch (e) {
+      await ForegroundServiceManager.stopService();
       state = state.copyWith(
         isConnecting: false,
         error: '通話開始に失敗しました: $e',
@@ -159,6 +186,7 @@ class CallNotifier extends Notifier<CallState> {
   Future<void> endCall() async {
     _durationTimer?.cancel();
     await _webrtc?.hangUp();
+    await ForegroundServiceManager.stopService();
     _callStartTime = null;
     state = state.copyWith(
       clearSession: true,
