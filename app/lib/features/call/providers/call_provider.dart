@@ -12,6 +12,7 @@ import '../../../core/constants.dart';
 class CallState {
   final app.CallSession? session;
   final bool isMuted;
+  final bool isVideoEnabled;
   final bool isConnecting;
   final String? error;
   final MediaStream? remoteStream;
@@ -19,6 +20,7 @@ class CallState {
   const CallState({
     this.session,
     this.isMuted = false,
+    this.isVideoEnabled = false,
     this.isConnecting = false,
     this.error,
     this.remoteStream,
@@ -27,6 +29,7 @@ class CallState {
   CallState copyWith({
     app.CallSession? session,
     bool? isMuted,
+    bool? isVideoEnabled,
     bool? isConnecting,
     String? error,
     MediaStream? remoteStream,
@@ -37,6 +40,7 @@ class CallState {
     return CallState(
       session: clearSession ? null : (session ?? this.session),
       isMuted: isMuted ?? this.isMuted,
+      isVideoEnabled: isVideoEnabled ?? this.isVideoEnabled,
       isConnecting: isConnecting ?? this.isConnecting,
       error: clearError ? null : (error ?? this.error),
       remoteStream:
@@ -51,6 +55,7 @@ class CallNotifier extends Notifier<CallState> {
   WebRTCService? _webrtc;
   StreamSubscription? _remoteStreamSub;
   StreamSubscription? _iceStateSub;
+  StreamSubscription? _videoStateSub;
   Timer? _durationTimer;
   DateTime? _callStartTime;
 
@@ -80,6 +85,10 @@ class CallNotifier extends Notifier<CallState> {
     });
 
     _iceStateSub = _webrtc!.onIceStateChange.listen(_onIceStateChange);
+
+    _videoStateSub = _webrtc!.onVideoStateChange.listen((enabled) {
+      state = state.copyWith(isVideoEnabled: enabled);
+    });
 
     try {
       await _signaling!.connect();
@@ -182,6 +191,12 @@ class CallNotifier extends Notifier<CallState> {
     state = state.copyWith(isMuted: _webrtc?.isMuted ?? false);
   }
 
+  /// Toggle video (operator sends request to both sides)
+  void toggleVideo() {
+    final enable = !state.isVideoEnabled;
+    _webrtc?.requestVideoToggle(enable);
+  }
+
   /// End the call
   Future<void> endCall() async {
     _durationTimer?.cancel();
@@ -206,6 +221,7 @@ class CallNotifier extends Notifier<CallState> {
     _durationTimer?.cancel();
     _remoteStreamSub?.cancel();
     _iceStateSub?.cancel();
+    _videoStateSub?.cancel();
     _webrtc?.dispose();
     _signaling?.dispose();
   }

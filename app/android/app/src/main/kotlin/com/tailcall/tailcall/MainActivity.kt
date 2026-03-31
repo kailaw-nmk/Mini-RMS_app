@@ -13,6 +13,7 @@ import io.flutter.plugin.common.MethodChannel
 class MainActivity : FlutterActivity() {
     companion object {
         private const val CHANNEL = "com.tailcall/foreground_service"
+        private const val THERMAL_CHANNEL = "com.tailcall/thermal"
     }
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
@@ -45,6 +46,24 @@ class MainActivity : FlutterActivity() {
                     else -> result.notImplemented()
                 }
             }
+
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, THERMAL_CHANNEL)
+            .setMethodCallHandler { call, result ->
+                when (call.method) {
+                    "getThermalState" -> {
+                        result.success(getThermalState())
+                    }
+                    else -> result.notImplemented()
+                }
+            }
+    }
+
+    private fun getThermalState(): Int {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            val pm = getSystemService(Context.POWER_SERVICE) as PowerManager
+            return pm.currentThermalStatus
+        }
+        return 0 // THERMAL_STATUS_NONE
     }
 
     private fun startCallService() {

@@ -3,7 +3,10 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_webrtc/flutter_webrtc.dart';
 import 'media_metrics.dart';
 
-/// Monitors RTP/RTCP stats and adjusts audio quality dynamically
+/// Callback for video auto-control based on quality
+typedef VideoAutoControlCallback = void Function(bool shouldEnableVideo);
+
+/// Monitors RTP/RTCP stats and adjusts audio/video quality dynamically
 class QualityController {
   RTCPeerConnection? _peerConnection;
   Timer? _pollTimer;
@@ -11,6 +14,11 @@ class QualityController {
 
   MediaMetrics _currentMetrics = const MediaMetrics();
   QualityLevel _lastLevel = QualityLevel.good;
+  int _hysteresisCount = 0;
+  static const int _hysteresisThreshold = 3; // Require 3 consecutive readings
+
+  /// Callback to auto-disable video when quality drops
+  VideoAutoControlCallback? onVideoAutoControl;
 
   final _metricsController = StreamController<MediaMetrics>.broadcast();
   final _qualityChangeController = StreamController<QualityLevel>.broadcast();
@@ -96,13 +104,26 @@ class QualityController {
 
       _metricsController.add(_currentMetrics);
 
-      // Check for quality level change
+      // Check for quality level change with hysteresis
       final newLevel = _currentMetrics.qualityLevel;
       if (newLevel != _lastLevel) {
-        _lastLevel = newLevel;
-        _qualityChangeController.add(newLevel);
-        debugPrint('QualityController: level changed to ${newLevel.name}');
-        _applyQualityAdjustment(newLevel);
+        _hysteresisCount++;
+        // Require multiple consecutive readings to avoid rapid oscillation
+        if (_hysteresisCount >= _hysteresisThreshold ||
+            newLevel == QualityLevel.critical) {
+          _lastLevel = newLevel;
+          _hysteresisCount = 0;
+          _qualityChangeController.add(newLevel);
+          debugPrint('QualityController: level changed to ${newLevel.name}');
+          _applyQualityAdjustment(newLevel);
+
+          // Auto-disable video on FAIR or worse
+          if (newLevel.index >= QualityLevel.fair.index) {
+            onVideoAutoControl?.call(false);
+          }
+        }
+      } else {
+        _hysteresisCount = 0;
       }
     } catch (e) {
       debugPrint('QualityController: poll error: $e');

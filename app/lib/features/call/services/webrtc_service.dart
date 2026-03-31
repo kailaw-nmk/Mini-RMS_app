@@ -10,12 +10,15 @@ class WebRTCService {
 
   RTCPeerConnection? _peerConnection;
   MediaStream? _localStream;
+  MediaStream? _localVideoStream;
   String? _sessionId;
   bool _isMuted = false;
+  bool _isVideoEnabled = false;
 
   final _remoteStreamController = StreamController<MediaStream?>.broadcast();
   final _iceStateController =
       StreamController<RTCIceConnectionState>.broadcast();
+  final _videoStateController = StreamController<bool>.broadcast();
 
   WebRTCService({required this.signaling}) {
     _listenToSignaling();
@@ -34,8 +37,17 @@ class WebRTCService {
   /// Whether local audio is muted
   bool get isMuted => _isMuted;
 
+  /// Whether video is currently enabled
+  bool get isVideoEnabled => _isVideoEnabled;
+
+  /// Stream of video state changes
+  Stream<bool> get onVideoStateChange => _videoStateController.stream;
+
   /// Local media stream
   MediaStream? get localStream => _localStream;
+
+  /// Local video stream (separate from audio)
+  MediaStream? get localVideoStream => _localVideoStream;
 
   static final Map<String, dynamic> _rtcConfig = {
     'iceServers': <Map<String, dynamic>>[],
@@ -61,6 +73,9 @@ class WebRTCService {
           break;
         case 'ice_candidate':
           await _handleIceCandidate(msg);
+          break;
+        case 'video_request':
+          await _handleVideoRequest(msg);
           break;
         case 'call_end':
           await hangUp(fromRemote: true);
@@ -200,11 +215,116 @@ class WebRTCService {
     });
   }
 
+  /// Enable video (operator requests, driver auto-accepts)
+  Future<void> enableVideo() async {
+    if (_isVideoEnabled || _peerConnection == null) return;
+
+    try {
+      _localVideoStream = await navigator.mediaDevices.getUserMedia({
+        'audio': false,
+        'video': {
+          'facingMode': 'user',
+          'width': {'ideal': 480},
+          'height': {'ideal': 640},
+        },
+      });
+
+      for (final track in _localVideoStream!.getVideoTracks()) {
+        await _peerConnection!.addTrack(track, _localVideoStream!);
+      }
+
+      _isVideoEnabled = true;
+      _videoStateController.add(true);
+      debugPrint('WebRTC: video enabled');
+
+      // Renegotiate SDP
+      if (_sessionId != null) {
+        final offer = await _peerConnection!.createOffer();
+        final sdp =
+            SdpUtils.applyOpusOptimizations(offer.sdp!, bitrate: 24000);
+        await _peerConnection!
+            .setLocalDescription(RTCSessionDescription(sdp, 'offer'));
+        signaling.sendOffer(_sessionId!, sdp);
+      }
+    } catch (e) {
+      debugPrint('WebRTC: failed to enable video: $e');
+    }
+  }
+
+  /// Disable video (return to audio-only)
+  Future<void> disableVideo() async {
+    if (!_isVideoEnabled) return;
+
+    try {
+      // Remove video tracks from PeerConnection
+      final senders = await _peerConnection?.senders ?? [];
+      for (final sender in senders) {
+        if (sender.track?.kind == 'video') {
+          await _peerConnection?.removeTrack(sender);
+        }
+      }
+
+      // Stop local video
+      _localVideoStream?.getVideoTracks().forEach((track) {
+        track.stop();
+      });
+      await _localVideoStream?.dispose();
+      _localVideoStream = null;
+
+      _isVideoEnabled = false;
+      _videoStateController.add(false);
+      debugPrint('WebRTC: video disabled');
+
+      // Renegotiate SDP
+      if (_sessionId != null) {
+        final offer = await _peerConnection!.createOffer();
+        final sdp =
+            SdpUtils.applyOpusOptimizations(offer.sdp!, bitrate: 24000);
+        await _peerConnection!
+            .setLocalDescription(RTCSessionDescription(sdp, 'offer'));
+        signaling.sendOffer(_sessionId!, sdp);
+      }
+    } catch (e) {
+      debugPrint('WebRTC: failed to disable video: $e');
+    }
+  }
+
+  /// Handle video_request from peer (auto-accept for driver)
+  Future<void> _handleVideoRequest(Map<String, dynamic> msg) async {
+    final action = msg['action'] as String?;
+    if (action == 'enable') {
+      await enableVideo();
+    } else if (action == 'disable') {
+      await disableVideo();
+    }
+  }
+
+  /// Request video toggle via signaling (operator sends to driver)
+  void requestVideoToggle(bool enable) {
+    if (_sessionId == null) return;
+    signaling.send({
+      'type': 'video_request',
+      'session_id': _sessionId,
+      'action': enable ? 'enable' : 'disable',
+      'requested_by': 'operator',
+    });
+    // Operator also toggles own video
+    if (enable) {
+      enableVideo();
+    } else {
+      disableVideo();
+    }
+  }
+
   /// Hang up the call
   Future<void> hangUp({bool fromRemote = false}) async {
     if (!fromRemote && _sessionId != null) {
       signaling.endCall(_sessionId!);
     }
+
+    await _localVideoStream?.dispose();
+    _localVideoStream = null;
+    _isVideoEnabled = false;
 
     await _localStream?.dispose();
     _localStream = null;
@@ -213,14 +333,19 @@ class WebRTCService {
     _peerConnection = null;
 
     _remoteStreamController.add(null);
+    _videoStateController.add(false);
     _sessionId = null;
     signaling.sessionResumeId = null;
   }
+
+  /// Get the PeerConnection (for quality monitoring etc.)
+  RTCPeerConnection? get peerConnection => _peerConnection;
 
   /// Dispose all resources
   Future<void> dispose() async {
     await hangUp();
     _remoteStreamController.close();
     _iceStateController.close();
+    _videoStateController.close();
   }
 }

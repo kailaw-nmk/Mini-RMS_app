@@ -267,6 +267,19 @@ class _CallScreenState extends ConsumerState<CallScreen> {
                 onTap: notifier.toggleMute,
               ),
 
+              // Video toggle (operator only)
+              if (_isOperator)
+                _buildControlButton(
+                  icon: callState.isVideoEnabled
+                      ? Icons.videocam
+                      : Icons.videocam_off,
+                  label: callState.isVideoEnabled ? 'ビデオON' : 'ビデオ',
+                  color: callState.isVideoEnabled
+                      ? const Color(0xFF2196F3)
+                      : Colors.white54,
+                  onTap: notifier.toggleVideo,
+                ),
+
               // End call: operator = normal button, driver = 3s long press
               if (_isOperator)
                 _buildControlButton(
