@@ -4,6 +4,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../features/call/providers/call_provider.dart';
 import '../features/call/models/call_state.dart' as app;
 import '../features/call/widgets/call_status_bar.dart';
+import '../features/call/widgets/quality_indicator.dart';
+import '../features/call/widgets/emergency_end_button.dart';
+import '../features/metrics/media_metrics.dart';
 import '../services/foreground_service.dart';
 
 class CallScreen extends ConsumerStatefulWidget {
@@ -211,6 +214,8 @@ class _CallScreenState extends ConsumerState<CallScreen> {
           connectionState: session.connectionState,
           callDuration: duration,
         ),
+        if (session.connectionState == app.ConnectionState.connected)
+          const QualityIndicator(metrics: MediaMetrics()),
 
         Expanded(
           child: Center(
@@ -248,13 +253,13 @@ class _CallScreenState extends ConsumerState<CallScreen> {
           ),
         ),
 
-        // Controls
+        // Controls: different for operator vs driver
         Padding(
           padding: const EdgeInsets.all(32),
           child: Row(
             mainAxisAlignment: MainAxisAlignment.spaceEvenly,
             children: [
-              // Mute button
+              // Mute button (both roles)
               _buildControlButton(
                 icon: callState.isMuted ? Icons.mic_off : Icons.mic,
                 label: callState.isMuted ? 'ミュート中' : 'ミュート',
@@ -262,14 +267,17 @@ class _CallScreenState extends ConsumerState<CallScreen> {
                 onTap: notifier.toggleMute,
               ),
 
-              // End call button
-              _buildControlButton(
-                icon: Icons.call_end,
-                label: '終了',
-                color: Colors.red,
-                onTap: notifier.endCall,
-                large: true,
-              ),
+              // End call: operator = normal button, driver = 3s long press
+              if (_isOperator)
+                _buildControlButton(
+                  icon: Icons.call_end,
+                  label: '終了',
+                  color: Colors.red,
+                  onTap: notifier.endCall,
+                  large: true,
+                )
+              else
+                EmergencyEndButton(onConfirmedEnd: notifier.endCall),
             ],
           ),
         ),
