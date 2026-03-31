@@ -1,0 +1,26 @@
+# Claude Code config
+.claude/
+Plan/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Node.js (server/)
+node_modules/
+.env
+*.log
+
+# Flutter (app/)
+.dart_tool/
+.packages
+build/
+*.iml
+.idea/
+.flutter-plugins
+.flutter-plugins-dependencies
+
+# IDE
+.vscode/
+*.swp
+*.swo
