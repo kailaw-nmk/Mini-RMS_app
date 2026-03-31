@@ -7,8 +7,10 @@
   "scripts": {
     "start": "node src/index.js",
     "dev": "nodemon --watch src src/index.js | pino-pretty",
-    "test": "vitest run",
-    "test:watch": "vitest"
+    "test": "vitest run --exclude test/e2e.test.js",
+    "test:watch": "vitest --exclude test/e2e.test.js",
+    "test:e2e": "node --no-warnings test/e2e-runner.js",
+    "test:all": "vitest run --exclude test/e2e.test.js && node --no-warnings test/e2e-runner.js"
   },
   "engines": {
     "node": ">=20"
