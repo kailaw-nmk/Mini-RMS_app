@@ -5,11 +5,23 @@ import 'package:flutter/foundation.dart';
 class ForegroundServiceManager {
   static const _channel = MethodChannel('com.tailcall/foreground_service');
 
-  /// Start the foreground service (call this when call begins)
+  /// Start standby mode (call this on server connect, before any call)
+  /// Keeps app alive with minimal notification while waiting for calls.
+  static Future<void> startStandby() async {
+    try {
+      await _channel.invokeMethod('startStandby');
+      debugPrint('ForegroundService: standby started');
+    } on PlatformException catch (e) {
+      debugPrint('ForegroundService: failed to start standby: ${e.message}');
+    }
+  }
+
+  /// Upgrade to call mode (call this when call begins)
+  /// Shows visible notification and acquires wake lock.
   static Future<void> startService() async {
     try {
       await _channel.invokeMethod('startService');
-      debugPrint('ForegroundService: started');
+      debugPrint('ForegroundService: call mode started');
     } on PlatformException catch (e) {
       debugPrint('ForegroundService: failed to start: ${e.message}');
     }

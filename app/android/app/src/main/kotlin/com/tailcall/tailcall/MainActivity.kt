@@ -22,6 +22,10 @@ class MainActivity : FlutterActivity() {
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, CHANNEL)
             .setMethodCallHandler { call, result ->
                 when (call.method) {
+                    "startStandby" -> {
+                        startStandbyService()
+                        result.success(true)
+                    }
                     "startService" -> {
                         startCallService()
                         result.success(true)
@@ -66,9 +70,20 @@ class MainActivity : FlutterActivity() {
         return 0 // THERMAL_STATUS_NONE
     }
 
+    private fun startStandbyService() {
+        val intent = Intent(this, CallForegroundService::class.java).apply {
+            action = CallForegroundService.ACTION_START_STANDBY
+        }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            startForegroundService(intent)
+        } else {
+            startService(intent)
+        }
+    }
+
     private fun startCallService() {
         val intent = Intent(this, CallForegroundService::class.java).apply {
-            action = CallForegroundService.ACTION_START
+            action = CallForegroundService.ACTION_START_CALL
         }
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             startForegroundService(intent)

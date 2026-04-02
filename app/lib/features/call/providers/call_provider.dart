@@ -91,6 +91,10 @@ class CallNotifier extends Notifier<CallState> {
     });
 
     try {
+      // Start Foreground Service in standby mode BEFORE connecting
+      // This keeps the app alive while waiting for incoming calls
+      await ForegroundServiceManager.startStandby();
+
       await _signaling!.connect();
       state = state.copyWith(clearError: true);
     } catch (e) {
