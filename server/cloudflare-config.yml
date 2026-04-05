@@ -1,0 +1,15 @@
+# Cloudflare Tunnel configuration for TailCall APK distribution
+#
+# Setup:
+# 1. cloudflared tunnel create tailcall
+# 2. Copy credentials JSON path to credentials-file below
+# 3. Add DNS CNAME: tailcall.remotecomfy-uone.jp -> TUNNEL_ID.cfargotunnel.com
+# 4. Run: cloudflared tunnel --config server/cloudflare-config.yml run tailcall
+
+tunnel: tailcall
+credentials-file: ~/.cloudflared/TUNNEL_ID.json
+
+ingress:
+  - hostname: tailcall.remotecomfy-uone.jp
+    service: http://localhost:3002
+  - service: http_status:404
